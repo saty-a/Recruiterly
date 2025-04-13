@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isRecruiter() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'recruiter';
+    }
+
+    function isCandidate() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'candidate';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (isAdmin() || request.auth.uid == userId);
+      allow update: if isAuthenticated() && (isAdmin() || isOwner(userId));
+      allow delete: if isAdmin();
+    }
+
+    // Predefined lists (managed by admin)
+    match /predefined_lists/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Job postings
+    match /job_postings/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'recruiter';
+      allow update, delete: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'recruiter' &&
+        resource.data.recruiterId == request.auth.uid;
+    }
+
+    // Candidate profiles
+    match /candidate_profiles/{userId} {
+      allow read: if isOwner(userId) || 
+        (isRecruiter() && exists(/databases/$(database)/documents/job_applications/{applicationId})) ||
+        isAdmin();
+      allow create, update: if isOwner(userId);
+      allow delete: if isAdmin();
+    }
+
+    // Job applications
+    match /job_applications/{applicationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        get(/databases/$(database)/documents/job_postings/$(resource.data.jobId)).data.recruiterId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'candidate' &&
+        request.resource.data.candidateId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (resource.data.candidateId == request.auth.uid && request.resource.data.candidateId == request.auth.uid) ||
+        (get(/databases/$(database)/documents/job_postings/$(resource.data.jobId)).data.recruiterId == request.auth.uid)
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Chat messages collection
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants
+      );
+      allow create: if isAuthenticated() && (
+        request.auth.uid in request.resource.data.participants &&
+        request.resource.data.senderId == request.auth.uid
+      );
+      allow update: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants &&
+        resource.data.senderId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants &&
+        resource.data.senderId == request.auth.uid
+      );
+    }
+  }
+} 

@@ -7,6 +7,7 @@ import 'app/routes/app_pages.dart';
 import 'app/services/auth_service.dart';
 import 'app/controllers/app_controller.dart';
 import 'app/data/models/user_model.dart';
+import 'app/data/dummy_data.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +30,17 @@ void main() async {
       case 'candidate':
         initialRoute = Routes.DASHBOARD;
         break;
+    }
+  }
+
+  // Create dummy data in debug mode
+  if (!const bool.fromEnvironment('dart.vm.product')) {
+    try {
+      final dummyData = DummyData();
+      await dummyData.createDummyData();
+      print('Dummy data created successfully');
+    } catch (e) {
+      print('Error creating dummy data: $e');
     }
   }
 
